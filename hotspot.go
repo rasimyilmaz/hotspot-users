@@ -14,7 +14,6 @@ import (
 )
 
 var (
-	debug    = flag.Bool("debug", false, "enable debugging")
 	password = flag.String("password", "admin1982", "the database password")
 	port     = flag.Int("port", 1433, "the database port")
 	server   = flag.String("server", "SRV", "the database server")
@@ -31,12 +30,30 @@ type Guest struct {
 	BirthYear    int       `json:"birth_year"`
 }
 
-func main() {
+func serve(closesignal chan int) {
 	flag.Parse()
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
-	r.GET("/", QueryQuests)
-	r.Run()
+	router := gin.Default()
+	router.GET("/", QueryQuests)
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: router,
+	}
+	go func() {
+		// service connections
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+	<-closesignal
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+	}
+	select {
+	case <-ctx.Done():
+		srv.Close()
+	}
 }
 func serveHTTP() {
 	http.Handle("/", http.FileServer(http.Dir(".")))
@@ -59,16 +76,7 @@ func QueryQuests(c *gin.Context) {
 func GetGuests(name string) ([]Guest, error) {
 	ctx := context.Background()
 	var Quests []Guest
-	if *debug {
-		fmt.Printf(" password:%s\n", *password)
-		fmt.Printf(" port:%d\n", *port)
-		fmt.Printf(" server:%s\n", *server)
-		fmt.Printf(" user:%s\n", *user)
-	}
 	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s", *server, *user, *password, *port, name)
-	if *debug {
-		fmt.Printf(" connString:%s\n", connString)
-	}
 	conn, err := sql.Open("mssql", connString)
 	if err != nil {
 		log.Print("Open connection failed:", err.Error())
